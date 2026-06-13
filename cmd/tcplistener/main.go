@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net"
-	"strings"
+
+	r "github.com/finfreezer/httpfromtcp/internal/request"
 )
 
 func main() {
@@ -33,16 +33,23 @@ func listenerLoop(l net.Listener) {
 		}
 		go func(c net.Conn) {
 			fmt.Println("Connection accepted.")
-			linechan := getLinesChannel(c)
-			for line := range linechan {
-				fmt.Println(line)
+			linechan, err := r.RequestFromReader(c)
+			if err != nil {
+				log.Fatal(err)
 			}
+			helperPrintRequest(linechan)
+
 			fmt.Println("Connection closed.")
 		}(conn)
 	}
 }
 
-func getLinesChannel(f io.ReadCloser) <-chan string {
+func helperPrintRequest(r *r.Request) {
+	fmt.Println("Request line:")
+	fmt.Printf("- Method: %s\n- Target: %s\n- Version: %s\n", r.RequestLine.Method, r.RequestLine.RequestTarget, r.RequestLine.HttpVersion)
+}
+
+/*func getLinesChannel(f io.ReadCloser) <-chan string {
 	currentLine := ""
 	lineChan := make(chan string)
 
@@ -72,4 +79,4 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 		}
 	}()
 	return lineChan
-}
+}*/
