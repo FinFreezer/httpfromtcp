@@ -2,7 +2,6 @@ package headers
 
 import (
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 	"unicode"
@@ -16,6 +15,10 @@ func NewHeaders() Headers {
 	return make(Headers)
 }
 
+func (h Headers) Get(key string) string {
+	return h[strings.ToLower(key)]
+}
+
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	const CRLF = "\r\n"
 	if !strings.Contains(string(data), CRLF) {
@@ -26,7 +29,6 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	}
 	//Host: localhost:42069\r\n
 	headerLine := strings.Split(string(data), "\r\n")
-	fmt.Println(headerLine)
 
 	err = checkForWhitespace([]byte(headerLine[0]))
 	if err != nil {

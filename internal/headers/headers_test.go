@@ -8,7 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRequestLineParse(t *testing.T) {
+func TestHeadersParse(t *testing.T) {
+	fmt.Println("Running headers_test.")
 	testNo := 1
 
 	// Test 1: Valid single header
@@ -41,6 +42,7 @@ func TestRequestLineParse(t *testing.T) {
 	n, done, err = headers.Parse(data[n:])
 	require.NoError(t, err)
 	require.NotNil(t, headers)
+	assert.Equal(t, "localhost:42069", headers["host"])
 	assert.Equal(t, "curl/7.81.0", headers["user-agent"])
 	testNo += 1
 
