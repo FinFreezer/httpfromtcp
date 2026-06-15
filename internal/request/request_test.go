@@ -199,6 +199,31 @@ func TestRequestLineParse(t *testing.T) {
 	require.Error(t, err)
 	testNo += 1
 
+	// Test 15: Empty Body, 0 reported content length
+	fmt.Printf("Running test nr. %d\n", testNo)
+	reader = &chunkReader{
+		data: "POST /submit HTTP/1.1\r\n" +
+			"Host: localhost:42069\r\n" +
+			"Content-Length: 0\r\n" +
+			"\r\n",
+		numBytesPerRead: 3,
+	}
+	r, err = RequestFromReader(reader)
+	require.NoError(t, err)
+	testNo += 1
+
+	// Test 16: Empty Body, no reported content length
+	fmt.Printf("Running test nr. %d\n", testNo)
+	reader = &chunkReader{
+		data: "POST /submit HTTP/1.1\r\n" +
+			"Host: localhost:42069\r\n" +
+			"\r\n" +
+			"",
+		numBytesPerRead: 3,
+	}
+	r, err = RequestFromReader(reader)
+	require.NoError(t, err)
+	testNo += 1
 }
 
 type chunkReader struct {

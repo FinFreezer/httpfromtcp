@@ -20,6 +20,7 @@ const (
 	ParseRqstLine RequestStatus = iota
 	ParseHeaders
 	ParseBody
+	EOF
 	Finished
 )
 
@@ -52,7 +53,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 			n, err := reader.Read(buf[readToIndex:])
 			if err == io.EOF {
-				newRqst.State = Finished
+				newRqst.State = EOF
 			}
 			readToIndex += n
 			n, err = newRqst.parse(buf[:readToIndex])
@@ -75,13 +76,15 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 }
 
 func parseRequestLine(request []byte) (int, *RequestLine, error) {
-	isFullLine := strings.Contains(string(request), "\r\n")
-	if !isFullLine {
+	requestLine := string(request)
+
+	splitPos := strings.Index(requestLine, "\r\n")
+	if splitPos == -1 {
 		return 0, nil, nil
 	}
-	requestLine := strings.Split(string(request), "\r\n")[0]
-	leftOvers := strings.Split(string(request), "\r\n")[1]
-	requestLineParts := strings.Split(requestLine, " ")
+	linePart := requestLine[:splitPos]
+	//leftOvers := requestLine[splitPos+2:]
+	requestLineParts := strings.Split(linePart, " ")
 
 	if len(requestLineParts) != 3 {
 		log.Println("Incorrect amount of parts in request.")
@@ -109,16 +112,17 @@ func parseRequestLine(request []byte) (int, *RequestLine, error) {
 		log.Printf("Incorrect HTTP version.")
 		return len(request), nil, errors.New("Incorrect HTTP version")
 	}
-
-	return len(request) - len(leftOvers), &newRequestLine, nil
+	bytesConsumed := splitPos + 2
+	return bytesConsumed, &newRequestLine, nil
 }
 
 func (r *Request) parse(data []byte) (int, error) {
 	bytesParsed := 0
-
-	if r.State == ParseBody {
+	log.Println(data)
+	if r.State == ParseBody || r.State == EOF {
 		length := r.Headers.Get("content-length")
 		if length == "" {
+			log.Println("No content-length key.")
 			r.State = Finished
 			return 0, nil
 		}
@@ -126,13 +130,17 @@ func (r *Request) parse(data []byte) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		log.Println(string(data))
 		r.Body = append(r.Body, data...)
 
-		if len(r.Body) != lengthInt {
-			return 0, errors.New("Body length doesn't match content-length.")
+		if r.State == EOF {
+			if len(r.Body) != lengthInt {
+				log.Printf("content-length: %d, body: %v", lengthInt, r.Body)
+				return 0, errors.New("Body length doesn't match content-length.")
+			} else {
+				r.State = Finished
+			}
 		}
-		r.State = Finished
+
 		return len(data), nil
 	}
 

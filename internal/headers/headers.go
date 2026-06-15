@@ -27,14 +27,17 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	if string(data[:2]) == CRLF {
 		return 2, true, nil
 	}
-	//Host: localhost:42069\r\n
-	headerLine := strings.Split(string(data), "\r\n")
+	headerString := string(data)
+	splitIndx := strings.Index(headerString, CRLF)
 
-	err = checkForWhitespace([]byte(headerLine[0]))
+	//Host: localhost:42069\r\n
+	headerLine := headerString[:splitIndx]
+
+	err = checkForWhitespace([]byte(headerLine))
 	if err != nil {
 		return 0, false, err
 	}
-	headerFields := strings.SplitN(headerLine[0], ":", 2)
+	headerFields := strings.SplitN(headerLine, ":", 2)
 	headerKey := strings.ToLower(strings.Trim(headerFields[0], " "))
 	headerValue := strings.Trim(headerFields[1], " ")
 	err = checkForForbiddenCharacters(headerKey)
@@ -48,7 +51,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		h[headerKey] = h[headerKey] + ", " + headerValue
 	}
 
-	bytesUsed := len(headerLine[0] + "\r\n")
+	bytesUsed := splitIndx + 2
 	return bytesUsed, false, nil
 
 }
@@ -74,6 +77,7 @@ func checkForForbiddenCharacters(s string) error {
 	if len(s) < 1 {
 		return errors.New("Invalid character found.")
 	}
+
 	for _, char := range s {
 
 		if !unicode.IsLetter(char) && !unicode.IsDigit(char) {
