@@ -13,6 +13,7 @@ import (
 )
 
 var bufferSize = 8
+var isEOF = false
 
 type RequestStatus int
 
@@ -118,8 +119,10 @@ func parseRequestLine(request []byte) (int, *RequestLine, error) {
 
 func (r *Request) parse(data []byte) (int, error) {
 	bytesParsed := 0
-	log.Println(data)
 	if r.State == ParseBody || r.State == EOF {
+		if len(data) >= 2 && string(data[:2]) == "\r\n" {
+			data = data[2:]
+		}
 		length := r.Headers.Get("content-length")
 		if length == "" {
 			log.Println("No content-length key.")
