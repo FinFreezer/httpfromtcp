@@ -17,11 +17,6 @@ func main() {
 	}
 	defer listener.Close()
 	listenerLoop(listener)
-	/*lineChan := getLinesChannel(file)
-
-	for line := range lineChan {
-		fmt.Println(line)
-	}*/
 
 }
 
@@ -53,35 +48,3 @@ func helperPrintRequest(r *r.Request) {
 	fmt.Println("Body:")
 	fmt.Println(string(r.Body))
 }
-
-/*func getLinesChannel(f io.ReadCloser) <-chan string {
-	currentLine := ""
-	lineChan := make(chan string)
-
-	buf := make([]byte, 8)
-	go func() {
-		defer f.Close()
-		for {
-			n, err := f.Read(buf)
-
-			parts := strings.Split(string(buf[:n]), "\n")
-			if len(parts) == 1 {
-				currentLine += parts[0]
-
-			} else {
-				for i := range len(parts) - 1 {
-					currentLine += parts[i]
-					lineChan <- currentLine
-					currentLine = ""
-					currentLine += parts[i+1]
-				}
-			}
-			if err != nil {
-				lineChan <- currentLine
-				close(lineChan)
-				return
-			}
-		}
-	}()
-	return lineChan
-}*/

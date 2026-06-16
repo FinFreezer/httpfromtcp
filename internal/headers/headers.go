@@ -38,6 +38,11 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		return 0, false, err
 	}
 	headerFields := strings.SplitN(headerLine, ":", 2)
+
+	if len(headerFields) != 2 {
+		return 0, false, errors.New("Malformed header.")
+	}
+
 	headerKey := strings.ToLower(strings.Trim(headerFields[0], " "))
 	headerValue := strings.Trim(headerFields[1], " ")
 	err = checkForForbiddenCharacters(headerKey)

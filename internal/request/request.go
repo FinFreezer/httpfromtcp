@@ -20,7 +20,6 @@ const (
 	ParseRqstLine RequestStatus = iota
 	ParseHeaders
 	ParseBody
-	EOF
 	Finished
 )
 
@@ -41,37 +40,51 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	buf := make([]byte, bufferSize)
 	readToIndex := 0
 	newRqst := Request{State: ParseRqstLine, Headers: h.NewHeaders()}
+	isEOF := false
 
-	for {
-		if newRqst.State != Finished {
+	for newRqst.State != Finished {
 
-			if readToIndex == len(buf) {
-				newBuf := make([]byte, len(buf)*2)
-				copy(newBuf, buf)
-				buf = newBuf
-			}
+		if readToIndex == len(buf) {
+			newBuf := make([]byte, len(buf)*2)
+			copy(newBuf, buf)
+			buf = newBuf
+		}
 
-			n, err := reader.Read(buf[readToIndex:])
-			if err == io.EOF {
-				newRqst.State = EOF
-			}
-			readToIndex += n
+		n, err := reader.Read(buf[readToIndex:])
+		if err == io.EOF {
+			isEOF = true
+		}
+		if err != nil && !isEOF {
+			return nil, err
+		}
+		readToIndex += n
+
+		for readToIndex > 0 {
+			log.Printf("state before parse: %v, buffered=%d", newRqst.State, readToIndex)
 			n, err = newRqst.parse(buf[:readToIndex])
+			log.Printf("state after parse: %v, consumed=%d, err=%v", newRqst.State, n, err)
 			if err != nil {
-				log.Printf("Error parsing buffer: %s", err)
-				if err.Error() != "Error: trying to read data in done state." {
-					return nil, err
-				}
-				newRqst.State = Finished
+				return nil, err
 			}
-			copy(buf, buf[n:readToIndex])
-			readToIndex -= n
+			if n > 0 {
+				copy(buf, buf[n:readToIndex])
+				readToIndex -= n
+			}
 			if newRqst.State == Finished {
 				break
 			}
+			if n == 0 {
+				break
+			}
+		}
+
+		if newRqst.State == Finished {
+			break
+		}
+		if isEOF {
+			return nil, errors.New("Reached EOF without finishing request.")
 		}
 	}
-	//helperPrintRequest(newRqst)
 	return &newRqst, nil
 }
 
@@ -83,7 +96,6 @@ func parseRequestLine(request []byte) (int, *RequestLine, error) {
 		return 0, nil, nil
 	}
 	linePart := requestLine[:splitPos]
-	//leftOvers := requestLine[splitPos+2:]
 	requestLineParts := strings.Split(linePart, " ")
 
 	if len(requestLineParts) != 3 {
@@ -118,11 +130,11 @@ func parseRequestLine(request []byte) (int, *RequestLine, error) {
 
 func (r *Request) parse(data []byte) (int, error) {
 	bytesParsed := 0
-	if r.State == ParseBody || r.State == EOF {
-		if len(data) >= 2 && string(data[:2]) == "\r\n" {
-			data = data[2:]
-		}
+	log.Printf("Current state: %v\n", r.State)
+
+	if r.State == ParseBody {
 		length := r.Headers.Get("content-length")
+		log.Printf("Parsing body, expecting %s bytes, remaining data %d\n", length, len(data))
 		if length == "" {
 			log.Println("No content-length key.")
 			r.State = Finished
@@ -132,18 +144,17 @@ func (r *Request) parse(data []byte) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		r.Body = append(r.Body, data...)
+		bytesRequired := lengthInt - len(r.Body)
+		bytesParsed := min(bytesRequired, len(data))
+		r.Body = append(r.Body, data[:bytesParsed]...)
 
-		if r.State == EOF {
-			if len(r.Body) != lengthInt {
-				log.Printf("content-length: %d, body: %v", lengthInt, r.Body)
-				return 0, errors.New("Body length doesn't match content-length.")
-			} else {
-				r.State = Finished
-			}
+		if len(r.Body) == lengthInt {
+			r.State = Finished
+			log.Printf("Body Parsed... new state: %+v\n", r.State)
+			return bytesParsed, nil
 		}
 
-		return len(data), nil
+		return bytesParsed, nil
 	}
 
 	if r.State == ParseHeaders {
@@ -154,6 +165,11 @@ func (r *Request) parse(data []byte) (int, error) {
 		bytesParsed += n
 		if doneState {
 			r.State = ParseBody
+			contentLength := r.Headers.Get("content-length")
+			if contentLength == strconv.Itoa(0) || contentLength == "" {
+				r.State = Finished
+			}
+			log.Printf("Headers Parsed... new state: %+v\n", r.State)
 		}
 		return bytesParsed, nil
 	}
@@ -170,21 +186,14 @@ func (r *Request) parse(data []byte) (int, error) {
 		if req != nil {
 			r.RequestLine = *req
 			r.State = ParseHeaders
+			log.Printf("Request Line Parsed... new state: %+v", r.State)
 			return bytesParsed, nil
 		}
 	}
 
 	if r.State == Finished {
 		log.Println("Parsing finished.")
-		return bytesParsed, errors.New("Error: trying to read data in done state.")
+		return bytesParsed, nil
 	}
 	return bytesParsed, errors.New("Unknown state.")
 }
-
-/*func helperPrintRequest(r Request) {
-	fmt.Printf("Request line:\n- Method: %s\n- Target: %s\n- Version: %s\n", r.RequestLine.Method, r.RequestLine.RequestTarget, r.RequestLine.HttpVersion)
-	fmt.Println("Headers:")
-	for key, value := range r.Headers {
-		fmt.Printf("- %s: %s\n", key, value)
-	}
-}*/

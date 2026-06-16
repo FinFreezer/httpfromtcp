@@ -5,16 +5,24 @@ import (
 	"io"
 	"log"
 	"net"
-	"net/http"
 	"strconv"
 	"sync/atomic"
 
+	"github.com/finfreezer/httpfromtcp/internal/headers"
+	"github.com/finfreezer/httpfromtcp/internal/request"
 	"github.com/finfreezer/httpfromtcp/internal/response"
 )
 
+type Handler func(w io.Writer, req *request.Request) *HandlerError
+
+type HandlerError struct {
+	StatusCode response.StatusCode
+	Message    string
+}
+
 type Server struct {
 	Addr     string
-	Handler  http.Handler
+	Handler  Handler
 	Listener net.Listener
 	IsAlive  *atomic.Bool
 }
@@ -24,7 +32,7 @@ type ByteReader struct {
 	Closer io.Closer
 }
 
-func Serve(port int) (*Server, error) {
+func Serve(port int, handler Handler) (*Server, error) {
 	portStr := ":" + strconv.Itoa(port)
 	listener, err := net.Listen("tcp", portStr)
 	Status := atomic.Bool{}
@@ -32,7 +40,7 @@ func Serve(port int) (*Server, error) {
 	if err != nil {
 		log.Printf("Error: %s", err)
 	}
-	newServer := Server{Addr: portStr, Handler: nil, Listener: listener, IsAlive: &Status}
+	newServer := Server{Addr: portStr, Handler: handler, Listener: listener, IsAlive: &Status}
 	go func(newServer *Server) {
 		newServer.listen()
 	}(&newServer)
@@ -67,32 +75,28 @@ func (s *Server) listen() {
 
 // Use io.NopCloser next time.
 func (s *Server) handle(conn net.Conn) {
-	err := response.WriteStatusLine(conn, 200)
+	log.Println("Handler reached.")
+	defer conn.Close()
+	request, err := request.RequestFromReader(conn)
+	log.Println("Finished parsing request.")
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	h := response.GetDefaultHeaders(0)
-	err = response.WriteHeaders(conn, h)
-	if err != nil {
-		log.Println(err)
+	handlerBuf := &bytes.Buffer{}
+	handlerErr := s.Handler(handlerBuf, request)
+
+	if handlerErr != nil {
+		h := response.GetDefaultHeaders(len(handlerErr.Message))
+		log.Printf("Content length: %+v \n Message length: %+v", h["content-length"], len(handlerErr.Message))
+		handlerErr.writeError(conn, h)
 		return
 	}
-	/*h := http.Header{}
-	h.Add("Content-Type", "text/plain")
-	respBody := []byte("\nHello World!")
-	newReader := bytes.NewReader(respBody)
-	bodyReader := ByteReader{Reader: newReader}
-	newRespPlain := []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nHello World!")
-	newResp := http.Response{
-		Status:     "200 OK",
-		StatusCode: 200,
-		Proto: "HTTP/1.1",
-		Header:        h,
-		Body:          bodyReader,
-		ContentLength: 13,
-	}*/
-	conn.Close()
+
+	h := response.GetDefaultHeaders(handlerBuf.Len())
+	response.WriteStatusLine(conn, response.OK)
+	response.WriteHeaders(conn, h)
+	conn.Write(handlerBuf.Bytes())
 }
 
 func (b ByteReader) Close() error {
@@ -104,4 +108,23 @@ func (b ByteReader) Close() error {
 
 func (b ByteReader) Read(data []byte) (int, error) {
 	return b.Reader.Read(data)
+}
+
+func (hErr *HandlerError) writeError(w io.Writer, h headers.Headers) error {
+	err := response.WriteStatusLine(w, hErr.StatusCode)
+	if err != nil {
+		log.Println("Error in writeError.")
+		return err
+	}
+	err = response.WriteHeaders(w, h)
+	if err != nil {
+		log.Println("Error in writeError.")
+		return err
+	}
+	_, err = w.Write([]byte(hErr.Message))
+	if err != nil {
+		log.Println("Error in writeError.")
+		return err
+	}
+	return nil
 }
