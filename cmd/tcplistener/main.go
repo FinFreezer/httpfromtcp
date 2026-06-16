@@ -50,6 +50,8 @@ func helperPrintRequest(r *r.Request) {
 	for key, value := range r.Headers {
 		fmt.Printf("- %s: %s\n", key, value)
 	}
+	fmt.Println("Body:")
+	fmt.Println(string(r.Body))
 }
 
 /*func getLinesChannel(f io.ReadCloser) <-chan string {

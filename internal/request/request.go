@@ -13,7 +13,6 @@ import (
 )
 
 var bufferSize = 8
-var isEOF = false
 
 type RequestStatus int
 
