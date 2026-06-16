@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 	"sync/atomic"
+
+	"github.com/finfreezer/httpfromtcp/internal/response"
 )
 
 type Server struct {
@@ -65,13 +67,24 @@ func (s *Server) listen() {
 
 // Use io.NopCloser next time.
 func (s *Server) handle(conn net.Conn) {
-	h := http.Header{}
+	err := response.WriteStatusLine(conn, 200)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	h := response.GetDefaultHeaders(0)
+	err = response.WriteHeaders(conn, h)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	/*h := http.Header{}
 	h.Add("Content-Type", "text/plain")
-	/*respBody := []byte("\nHello World!")
+	respBody := []byte("\nHello World!")
 	newReader := bytes.NewReader(respBody)
-	bodyReader := ByteReader{Reader: newReader} */
-	newRespPlain := []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\nHello World!")
-	/*newResp := http.Response{
+	bodyReader := ByteReader{Reader: newReader}
+	newRespPlain := []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nHello World!")
+	newResp := http.Response{
 		Status:     "200 OK",
 		StatusCode: 200,
 		Proto: "HTTP/1.1",
@@ -79,11 +92,6 @@ func (s *Server) handle(conn net.Conn) {
 		Body:          bodyReader,
 		ContentLength: 13,
 	}*/
-	_, err := conn.Write(newRespPlain)
-	if err != nil {
-		log.Println(err)
-		return
-	}
 	conn.Close()
 }
 
