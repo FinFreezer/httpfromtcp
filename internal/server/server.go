@@ -8,12 +8,11 @@ import (
 	"strconv"
 	"sync/atomic"
 
-	"github.com/finfreezer/httpfromtcp/internal/headers"
 	"github.com/finfreezer/httpfromtcp/internal/request"
 	"github.com/finfreezer/httpfromtcp/internal/response"
 )
 
-type Handler func(w io.Writer, req *request.Request) *HandlerError
+type Handler func(w *response.Writer, req *request.Request)
 
 type HandlerError struct {
 	StatusCode response.StatusCode
@@ -25,6 +24,7 @@ type Server struct {
 	Handler  Handler
 	Listener net.Listener
 	IsAlive  *atomic.Bool
+	Writer   *response.Writer
 }
 
 type ByteReader struct {
@@ -40,7 +40,7 @@ func Serve(port int, handler Handler) (*Server, error) {
 	if err != nil {
 		log.Printf("Error: %s", err)
 	}
-	newServer := Server{Addr: portStr, Handler: handler, Listener: listener, IsAlive: &Status}
+	newServer := Server{Addr: portStr, Handler: handler, Listener: listener, IsAlive: &Status, Writer: response.NewResponseWriter()}
 	go newServer.listen()
 	return &newServer, nil
 }
@@ -73,30 +73,14 @@ func (s *Server) listen() {
 // Use io.NopCloser next time.
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
+	s.Writer.ContentWriter = conn
 	request, err := request.RequestFromReader(conn)
-	log.Println("Finished parsing request.")
 	if err != nil {
-		handlerErr := &HandlerError{
-			StatusCode: response.BadRequest,
-			Message:    err.Error(),
-		}
-		h := response.GetDefaultHeaders(len(handlerErr.Message))
-		handlerErr.writeError(conn, h)
+		log.Println("Error requesting from reader")
 		return
 	}
-	handlerBuf := bytes.NewBuffer([]byte{})
-	handlerErr := s.Handler(handlerBuf, request)
-
-	if handlerErr != nil {
-		h := response.GetDefaultHeaders(len(handlerErr.Message))
-		handlerErr.writeError(conn, h)
-		return
-	}
-
-	h := response.GetDefaultHeaders(handlerBuf.Len())
-	response.WriteStatusLine(conn, response.OK)
-	response.WriteHeaders(conn, h)
-	conn.Write(handlerBuf.Bytes())
+	log.Println("Finished parsing request.")
+	s.Handler(s.Writer, request)
 }
 
 func (b ByteReader) Close() error {
@@ -110,21 +94,22 @@ func (b ByteReader) Read(data []byte) (int, error) {
 	return b.Reader.Read(data)
 }
 
-func (hErr *HandlerError) writeError(w io.Writer, h headers.Headers) error {
-	err := response.WriteStatusLine(w, hErr.StatusCode)
+/*func (hErr *HandlerError) writeError(w *response.Writer, h headers.Headers) error {
+	err := w.WriteStatusLine(hErr.StatusCode)
 	if err != nil {
 		log.Println("Error in writeError.")
 		return err
 	}
-	err = response.WriteHeaders(w, h)
+	err = w.WriteHeaders(h)
 	if err != nil {
 		log.Println("Error in writeError.")
 		return err
 	}
-	_, err = w.Write([]byte(hErr.Message))
+	_, err = w.WriteBody([]byte(hErr.Message))
 	if err != nil {
 		log.Println("Error in writeError.")
 		return err
 	}
+	log.Println(w.ResponseHTML)
 	return nil
-}
+}*/
