@@ -41,9 +41,7 @@ func Serve(port int, handler Handler) (*Server, error) {
 		log.Printf("Error: %s", err)
 	}
 	newServer := Server{Addr: portStr, Handler: handler, Listener: listener, IsAlive: &Status}
-	go func(newServer *Server) {
-		newServer.listen()
-	}(&newServer)
+	go newServer.listen()
 	return &newServer, nil
 }
 
@@ -58,37 +56,39 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) listen() {
-	if !s.IsAlive.Load() {
-		log.Print("Trying to listen while server is closed.")
-		return
-	}
 	for {
 		conn, err := s.Listener.Accept()
 		if err != nil {
-			log.Println(err)
+			if !s.IsAlive.Load() {
+				log.Print("Trying to listen while server is closed.")
+				return
+			}
+			log.Printf("Error accepting connection: %v", err)
+			continue
 		}
-		go func(c net.Conn) {
-			s.handle(c)
-		}(conn)
+		go s.handle(conn)
 	}
 }
 
 // Use io.NopCloser next time.
 func (s *Server) handle(conn net.Conn) {
-	log.Println("Handler reached.")
 	defer conn.Close()
 	request, err := request.RequestFromReader(conn)
 	log.Println("Finished parsing request.")
 	if err != nil {
-		log.Println(err)
+		handlerErr := &HandlerError{
+			StatusCode: response.BadRequest,
+			Message:    err.Error(),
+		}
+		h := response.GetDefaultHeaders(len(handlerErr.Message))
+		handlerErr.writeError(conn, h)
 		return
 	}
-	handlerBuf := &bytes.Buffer{}
+	handlerBuf := bytes.NewBuffer([]byte{})
 	handlerErr := s.Handler(handlerBuf, request)
 
 	if handlerErr != nil {
 		h := response.GetDefaultHeaders(len(handlerErr.Message))
-		log.Printf("Content length: %+v \n Message length: %+v", h["content-length"], len(handlerErr.Message))
 		handlerErr.writeError(conn, h)
 		return
 	}

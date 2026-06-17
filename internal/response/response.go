@@ -16,6 +16,12 @@ const (
 	InternalServerError StatusCode = 500
 )
 
+type Writer struct {
+	StatusLine []byte
+	Headers    headers.Headers
+	body       []byte
+}
+
 func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
 	switch statusCode {
 	case OK:

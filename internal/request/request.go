@@ -60,9 +60,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		readToIndex += n
 
 		for readToIndex > 0 {
-			log.Printf("state before parse: %v, buffered=%d", newRqst.State, readToIndex)
 			n, err = newRqst.parse(buf[:readToIndex])
-			log.Printf("state after parse: %v, consumed=%d, err=%v", newRqst.State, n, err)
 			if err != nil {
 				return nil, err
 			}
@@ -130,7 +128,6 @@ func parseRequestLine(request []byte) (int, *RequestLine, error) {
 
 func (r *Request) parse(data []byte) (int, error) {
 	bytesParsed := 0
-	log.Printf("Current state: %v\n", r.State)
 
 	if r.State == ParseBody {
 		length := r.Headers.Get("content-length")
@@ -150,7 +147,6 @@ func (r *Request) parse(data []byte) (int, error) {
 
 		if len(r.Body) == lengthInt {
 			r.State = Finished
-			log.Printf("Body Parsed... new state: %+v\n", r.State)
 			return bytesParsed, nil
 		}
 
@@ -169,7 +165,6 @@ func (r *Request) parse(data []byte) (int, error) {
 			if contentLength == strconv.Itoa(0) || contentLength == "" {
 				r.State = Finished
 			}
-			log.Printf("Headers Parsed... new state: %+v\n", r.State)
 		}
 		return bytesParsed, nil
 	}
@@ -186,7 +181,6 @@ func (r *Request) parse(data []byte) (int, error) {
 		if req != nil {
 			r.RequestLine = *req
 			r.State = ParseHeaders
-			log.Printf("Request Line Parsed... new state: %+v", r.State)
 			return bytesParsed, nil
 		}
 	}
