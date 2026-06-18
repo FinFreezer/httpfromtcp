@@ -80,6 +80,7 @@ func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
 	return nil
 }
 
+// Content-Length: N, connection: Close, Content-Type: text/plain
 func GetDefaultHeaders(contentLen int) headers.Headers {
 	headers := headers.NewHeaders()
 	contentLenStr := strconv.Itoa(contentLen)
@@ -97,20 +98,28 @@ func SetDefaultHeaders(headers headers.Headers, KeysToChange, Values []string) h
 	return headers
 }
 
+func RemoveSetHeader(headers headers.Headers, toRemove string) headers.Headers {
+	delete(headers, toRemove)
+	return headers
+}
+
 func (w *Writer) WriteHeaders(headers headers.Headers) error {
 	/*if w.WriterStatus != AwaitHeaders {
 		return errors.New("Invalid status, headers potentially already written, or awaiting status line.")
 	}*/
-
+	fmt.Println("Headers:")
+	fmt.Println(headers)
 	headerResp := []byte{}
 	for key, value := range headers {
 		respStr := fmt.Sprintf("%s: %s\r\n", key, value)
 		headerResp = append(headerResp, respStr...)
 	}
+
 	headerResp = append(headerResp, "\r\n"...)
 	_, err := w.ContentWriter.Write(headerResp)
 	if err != nil {
-		fmt.Println("Error in WriteHeaders.")
+		fmt.Println("Error in method w.WriteHeaders.")
+		fmt.Println(string(headerResp))
 		return err
 	}
 	return nil
@@ -150,7 +159,8 @@ func WriteHeaders(w io.Writer, headers headers.Headers) error {
 	headerResp = append(headerResp, "\r\n"...)
 	_, err := w.Write(headerResp)
 	if err != nil {
-		fmt.Println("Error in WriteHeaders.")
+		fmt.Println("Error in function resp.WriteHeaders.")
+		fmt.Println(string(headerResp))
 		return err
 	}
 	return nil
@@ -175,4 +185,69 @@ func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
 		w.Write(resp)
 		return nil
 	}
+}
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	bytesWritten := 0
+	chunkSizeInHex := fmt.Sprintf("%X\r\n", len(p))
+
+	_, err := w.ContentWriter.Write([]byte(chunkSizeInHex))
+	if err != nil {
+		return 0, err
+	}
+
+	n, err := w.ContentWriter.Write(p)
+	bytesWritten += n
+	if err != nil {
+		return 0, err
+	}
+
+	_, err = w.ContentWriter.Write([]byte("\r\n"))
+	if err != nil {
+		return 0, err
+	}
+
+	return bytesWritten, nil
+}
+
+func (w *Writer) WriteChunkedBodyDone(withHeaders bool) (int, error) {
+
+	if !withHeaders {
+		writtenBytes, err := w.ContentWriter.Write([]byte("0\r\n\r\n"))
+		if err != nil {
+			return 0, err
+		}
+		return writtenBytes, nil
+	} else {
+		writtenBytes, err := w.ContentWriter.Write([]byte("0\r\n"))
+		if err != nil {
+			return 0, err
+		}
+		err = w.WriteTrailers(w.Headers)
+		if err != nil {
+			return 0, err
+		}
+		return writtenBytes, nil
+	}
+
+}
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	fmt.Println(h)
+	headerResp := []byte{}
+	trailerNames := h.Get("trailer")
+
+	for trailerKey := range strings.SplitSeq(trailerNames, ", ") {
+		cleanTrailerKey := strings.TrimSpace(trailerKey)
+		trailerValue := h.Get(cleanTrailerKey)
+		respStr := fmt.Sprintf("%s: %s\r\n", cleanTrailerKey, trailerValue)
+		headerResp = append(headerResp, respStr...)
+	}
+	headerResp = append(headerResp, "\r\n"...)
+	_, err := w.ContentWriter.Write(headerResp)
+	if err != nil {
+		fmt.Println("Error in WriteTrailers.")
+		return err
+	}
+	return nil
 }
